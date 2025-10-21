@@ -59,7 +59,7 @@ else
 fi
 
 echo -e "\n========================================"
-echo "✅ Cleanup Complete!"
+echo "✅ Kubernetes Cleanup Complete!"
 echo "========================================"
 echo ""
 echo "📝 What was deleted:"
@@ -74,38 +74,113 @@ echo "  kubectl get namespaces | grep customer-app"
 echo "  kubectl get all --all-namespaces | grep customer-app"
 echo ""
 
-# Ask about image cleanup
+# Ask about OCI Registry cleanup
 echo "========================================"
-read -p "Do you want to remove images from OCI Registry? (yes/no): " CLEANUP_IMAGES
+echo "OCI Container Registry Cleanup"
+echo "========================================"
+echo ""
+read -p "Do you want to remove Docker images from OCI Registry? (yes/no): " CLEANUP_IMAGES
 
 if [ "$CLEANUP_IMAGES" = "yes" ]; then
     CONFIG_FILE="$(dirname "$0")/.registry-config"
-    if [ -f "$CONFIG_FILE" ]; then
-        source "$CONFIG_FILE"
-        
+    
+    if [ ! -f "$CONFIG_FILE" ]; then
         echo ""
-        echo "Removing images from OCI Registry..."
-        echo "Note: This requires OCI CLI to be configured"
-        echo ""
-        
-        echo "To manually delete images, go to:"
-        echo "  OCI Console → Developer Services → Container Registry"
-        echo ""
-        echo "Repositories to delete:"
-        echo "  - mongodb-customer"
-        echo "  - backend-customer"
-        echo "  - frontend-customer"
-    else
-        echo "Registry configuration not found"
-        echo "Delete images manually from OCI Console"
+        echo "⚠ Registry configuration not found"
+        echo "You'll need to delete images manually from OCI Console:"
+        echo "  1. Go to OCI Console → Developer Services → Container Registry"
+        echo "  2. Find and delete these repositories:"
+        echo "     - mongodb-customer"
+        echo "     - backend-customer"
+        echo "     - frontend-customer"
+        exit 0
     fi
+    
+    source "$CONFIG_FILE"
+    
+    echo ""
+    echo "Registry Configuration:"
+    echo "  Region: $REGION"
+    echo "  Namespace: $TENANCY_NAMESPACE"
+    echo "  Compartment: $COMPARTMENT_ID"
+    echo ""
+    
+    # Function to delete repository
+    delete_repo() {
+        local repo_name=$1
+        echo "Deleting repository: $repo_name"
+        
+        # Get repository OCID
+        REPO_OCID=$(oci artifacts container repository list \
+            --compartment-id "$COMPARTMENT_ID" \
+            --display-name "$repo_name" \
+            --query 'data.items[0].id' \
+            --raw-output 2>/dev/null)
+        
+        if [ -z "$REPO_OCID" ] || [ "$REPO_OCID" = "null" ]; then
+            echo "  ℹ Repository '$repo_name' not found or already deleted"
+            return 0
+        fi
+        
+        # Delete repository
+        oci artifacts container repository delete \
+            --repository-id "$REPO_OCID" \
+            --force \
+            2>/dev/null
+        
+        if [ $? -eq 0 ]; then
+            echo "  ✓ Repository '$repo_name' deleted"
+        else
+            echo "  ✗ Failed to delete '$repo_name' (may require manual deletion)"
+        fi
+    }
+    
+    echo "Deleting repositories from OCI Registry..."
+    echo ""
+    
+    delete_repo "mongodb-customer"
+    delete_repo "backend-customer"
+    delete_repo "frontend-customer"
+    
+    echo ""
+    echo "✅ OCI Registry cleanup complete!"
+    echo ""
+    echo "🔍 Verify in OCI Console:"
+    echo "  OCI Console → Developer Services → Container Registry"
+    echo ""
+    
+    # Clean up local config
+    echo "Removing local registry configuration..."
+    rm -f "$CONFIG_FILE"
+    echo "✓ Local configuration removed"
+    
 else
     echo ""
-    echo "Images in OCI Registry were not deleted"
-    echo "To delete them later, go to:"
-    echo "  OCI Console → Developer Services → Container Registry"
+    echo "Skipped OCI Registry cleanup"
+    echo ""
+    echo "Images remain in OCI Registry:"
+    echo "  - mongodb-customer"
+    echo "  - backend-customer"
+    echo "  - frontend-customer"
+    echo ""
+    echo "To delete them later:"
+    echo "  1. Go to OCI Console → Developer Services → Container Registry"
+    echo "  2. Select each repository and delete"
+    echo "  OR run this script again and choose 'yes'"
 fi
 
+echo ""
+echo "========================================"
+echo "Cleanup Summary"
+echo "========================================"
+echo ""
+echo "✅ Kubernetes Resources: Deleted"
+echo "$([ "$CLEANUP_IMAGES" = "yes" ] && echo "✅ OCI Registry Images: Deleted" || echo "⚠ OCI Registry Images: Not deleted")"
+echo ""
+echo "Next steps:"
+echo "  - Verify LoadBalancer deletion in OCI Console"
+echo "  - Check OCI Registry if you kept images"
+echo "  - You can redeploy anytime with ./scripts/k8s/03-deploy-all.sh"
 echo ""
 echo "========================================"
 echo "Cleanup process finished"
