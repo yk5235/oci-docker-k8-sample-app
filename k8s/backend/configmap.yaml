@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: backend-config
+  namespace: customer-app
+  labels:
+    app: backend
+    tier: application
+data:
+  MONGO_USERNAME: "mongo"
+  MONGO_PASSWORD: "password"
+  MONGO_HOST: "mongodb-service"
+  MONGO_PORT: "27017"
+  MONGO_DB: "customerDB"
+  NODE_ENV: "production"
