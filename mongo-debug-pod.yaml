@@ -1,9 +1,0 @@
-apiVersion: v1
-kind: Pod
-metadata:
-  name: mongo-debug-pod
-spec:
-  containers:
-  - name: debugger
-    image: mongo:latest
-    command: ["sleep", "3600"]  # Keep the container running

@@ -1,20 +1,51 @@
 # Node modules
 node_modules/
+npm-debug.log
+yarn-error.log
 
 # Build output
-Frontend-Customer/build/
-
-# Logs
+build/
+dist/
 *.log
 
 # Environment variables
 .env
-
-# Temporary files
-*.tmp
-*.swp
-.DS_Store
+*.env
+.env.local
+.env.production
 
 # IDE specific files
 .vscode/
 .idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Temporary files
+*.tmp
+*.temp
+.cache/
+
+# OS files
+Thumbs.db
+
+# Backups
+*-backup-*/
+*.backup
+
+# Docker volumes data
+data/
+
+# Logs
+logs/
+*.log
+
+# Old/Reference folders (if you kept them temporarily)
+Backend-Customer/
+Frontend-Customer/
+Chatgpt/
+customer/
+
+# Kubernetes secrets (will recreate for K8s deployment)
+*secret*.yaml
