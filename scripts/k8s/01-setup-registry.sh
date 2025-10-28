@@ -5,7 +5,7 @@ echo "========================================"
 echo "Setting Up OCI Container Registry"
 echo "========================================"
 
-# Configuration - UPDATE THESE VALUES
+# Configuration
 REGION="ap-singapore-1"
 TENANCY_NAMESPACE="idxkccw2srke"
 COMPARTMENT_ID="ocid1.compartment.oc1..aaaaaaaae42xeu7qhnn2yloyqv4focr2kuoyvqdom6ouhmshkghfzvpkswsq"
@@ -24,7 +24,6 @@ echo "Compartment: $COMPARTMENT_ID"
 if ! command -v oci &> /dev/null; then
     echo ""
     echo "❌ Error: OCI CLI is not installed"
-    echo "Please install from: https://docs.oracle.com/en-us/iaas/Content/API/SDKDocs/cliinstall.htm"
     exit 1
 fi
 
@@ -42,7 +41,6 @@ echo "✓ kubectl is installed"
 if ! kubectl cluster-info &> /dev/null; then
     echo ""
     echo "❌ Error: Cannot connect to Kubernetes cluster"
-    echo "Please configure kubectl to access your OKE cluster"
     exit 1
 fi
 
@@ -54,11 +52,8 @@ echo "========================================"
 echo "OCI Authentication Setup"
 echo "========================================"
 echo ""
-echo "You need your OCI username and an Auth Token."
-echo ""
 echo "📝 Your OCI Username format:"
 echo "   Format: oracleidentitycloudservice/<your-email>"
-echo "   Example: oracleidentitycloudservice/john.doe@company.com"
 echo ""
 
 read -p "Enter your OCI username: " OCI_USERNAME
@@ -88,56 +83,79 @@ else
     exit 1
 fi
 
-# Create repositories in OCI Registry
-echo -e "\n📦 Creating repositories in OCI Registry..."
-
-create_repo() {
+# Function to create repository with timeout
+create_repo_with_timeout() {
     local repo_name=$1
+    local timeout=60  # 60 seconds timeout
+    
     echo ""
     echo "Creating repository: $repo_name"
     
-    # Check if repository already exists first
-    EXISTING_REPO=$(oci artifacts container repository list \
+    # Use timeout command to prevent hanging
+    timeout $timeout oci artifacts container repository create \
         --compartment-id "$COMPARTMENT_ID" \
         --display-name "$repo_name" \
-        --query 'data.items[0].id' \
-        --raw-output 2>&1)
+        --is-public false 2>&1 | tee /tmp/oci_output.log
     
-    if [ $? -eq 0 ] && [ -n "$EXISTING_REPO" ] && [ "$EXISTING_REPO" != "null" ]; then
-        echo "  ℹ Repository '$repo_name' already exists"
-        return 0
-    fi
+    local exit_code=${PIPESTATUS[0]}
     
-    # Try to create repository - show errors this time
-    echo "  Creating new repository..."
-    CREATE_OUTPUT=$(oci artifacts container repository create \
-        --compartment-id "$COMPARTMENT_ID" \
-        --display-name "$repo_name" \
-        --is-public false 2>&1)
-    
-    CREATE_STATUS=$?
-    
-    if [ $CREATE_STATUS -eq 0 ]; then
+    if [ $exit_code -eq 0 ]; then
         echo "  ✓ Repository '$repo_name' created successfully"
+        return 0
+    elif [ $exit_code -eq 124 ]; then
+        echo "  ⚠ Timeout: OCI CLI took too long. Repository might have been created."
+        echo "  Checking if repository exists..."
+        sleep 2
+        check_repo_exists "$repo_name"
+        return $?
     else
         # Check if error is because it already exists
-        if echo "$CREATE_OUTPUT" | grep -q "already exists"; then
+        if grep -q "already exists\|AlreadyExists" /tmp/oci_output.log 2>/dev/null; then
             echo "  ℹ Repository '$repo_name' already exists (this is OK)"
+            return 0
         else
-            echo "  ⚠ Warning: Could not create repository '$repo_name'"
-            echo "  Error details: $CREATE_OUTPUT"
-            echo "  You may need to create it manually in OCI Console"
+            echo "  ⚠ Warning: Error creating repository '$repo_name'"
+            cat /tmp/oci_output.log
+            return 1
         fi
     fi
 }
 
+# Function to check if repository exists
+check_repo_exists() {
+    local repo_name=$1
+    
+    EXISTING_REPO=$(timeout 30 oci artifacts container repository list \
+        --compartment-id "$COMPARTMENT_ID" \
+        --display-name "$repo_name" \
+        --query 'data.items[0].id' \
+        --raw-output 2>/dev/null)
+    
+    if [ $? -eq 0 ] && [ -n "$EXISTING_REPO" ] && [ "$EXISTING_REPO" != "null" ]; then
+        echo "  ✓ Repository '$repo_name' exists"
+        return 0
+    else
+        echo "  ✗ Repository '$repo_name' does not exist"
+        return 1
+    fi
+}
+
+# Create repositories in OCI Registry
+echo -e "\n📦 Creating repositories in OCI Registry..."
+
 # Create all three repositories
-create_repo "$REPO_MONGODB"
-create_repo "$REPO_BACKEND"
-create_repo "$REPO_FRONTEND"
+create_repo_with_timeout "$REPO_MONGODB"
+create_repo_with_timeout "$REPO_BACKEND"
+create_repo_with_timeout "$REPO_FRONTEND"
 
 echo ""
 echo "✓ Repository setup completed"
+
+# Verify all repositories exist
+echo -e "\n🔍 Verifying all repositories..."
+check_repo_exists "$REPO_MONGODB"
+check_repo_exists "$REPO_BACKEND"
+check_repo_exists "$REPO_FRONTEND"
 
 # Create Kubernetes secret for image pull
 echo -e "\n🔑 Creating Kubernetes image pull secret..."
