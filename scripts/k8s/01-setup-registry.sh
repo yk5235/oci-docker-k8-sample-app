@@ -6,12 +6,9 @@ echo "Setting Up OCI Container Registry"
 echo "========================================"
 
 # Configuration - UPDATE THESE VALUES
-# REGION="ap-singapore-1"  # Your OCI region
-# TENANCY_NAMESPACE="your-tenancy-namespace"  # Your tenancy namespace (Object Storage Namespace)
-# COMPARTMENT_ID="ocid1.compartment.oc1..your-compartment-id"  # Your compartment OCID
-REGION="ap-singapore-1"  # Your OCI region
-TENANCY_NAMESPACE="axhhij4fyswp"  # Your tenancy namespace
-COMPARTMENT_ID="ocid1.compartment.oc1..aaaaaaaae2tjxljh2xp6ar62qtucfltuvvfwu5nlmhkftezacssbj26ccnzq"  # Your compartment OCID
+REGION="ap-singapore-1"
+TENANCY_NAMESPACE="idxkccw2srke"
+COMPARTMENT_ID="ocid1.compartment.oc1..aaaaaaaae42xeu7qhnn2yloyqv4focr2kuoyvqdom6ouhmshkghfzvpkswsq"
 
 # Repository names
 REPO_MONGODB="mongodb-customer"
@@ -22,32 +19,6 @@ echo -e "\n📋 Configuration:"
 echo "Region: $REGION"
 echo "Tenancy Namespace: $TENANCY_NAMESPACE"
 echo "Compartment: $COMPARTMENT_ID"
-
-# Validation
-if [[ "$TENANCY_NAMESPACE" == "your-tenancy-namespace" ]]; then
-    echo ""
-    echo "❌ ERROR: Please update TENANCY_NAMESPACE in this script"
-    echo ""
-    echo "To find your tenancy namespace:"
-    echo "1. Go to OCI Console"
-    echo "2. Click on your profile icon (top right)"
-    echo "3. Click 'Tenancy: <your-tenancy-name>'"
-    echo "4. Look for 'Object Storage Namespace' field"
-    echo ""
-    exit 1
-fi
-
-if [[ "$COMPARTMENT_ID" == "ocid1.compartment.oc1..your-compartment-id" ]]; then
-    echo ""
-    echo "❌ ERROR: Please update COMPARTMENT_ID in this script"
-    echo ""
-    echo "To find your compartment OCID:"
-    echo "1. Go to OCI Console → Identity & Security → Compartments"
-    echo "2. Find your compartment"
-    echo "3. Copy the OCID"
-    echo ""
-    exit 1
-fi
 
 # Check if OCI CLI is installed
 if ! command -v oci &> /dev/null; then
@@ -72,12 +43,6 @@ if ! kubectl cluster-info &> /dev/null; then
     echo ""
     echo "❌ Error: Cannot connect to Kubernetes cluster"
     echo "Please configure kubectl to access your OKE cluster"
-    echo ""
-    echo "To get kubeconfig:"
-    echo "1. Go to OCI Console → Developer Services → Kubernetes Clusters (OKE)"
-    echo "2. Click on your cluster"
-    echo "3. Click 'Access Cluster'"
-    echo "4. Follow the instructions to set up kubectl"
     exit 1
 fi
 
@@ -91,19 +56,9 @@ echo "========================================"
 echo ""
 echo "You need your OCI username and an Auth Token."
 echo ""
-echo "📝 To create an Auth Token:"
-echo "1. Go to OCI Console"
-echo "2. Click your profile icon → User Settings"
-echo "3. Under Resources → Auth Tokens"
-echo "4. Click 'Generate Token'"
-echo "5. Give it a description (e.g., 'k8s-deployment')"
-echo "6. Copy the generated token (you won't see it again!)"
-echo ""
-echo "📝 Your OCI Username is usually your email address or:"
+echo "📝 Your OCI Username format:"
 echo "   Format: oracleidentitycloudservice/<your-email>"
 echo "   Example: oracleidentitycloudservice/john.doe@company.com"
-echo ""
-echo "   OR for federated users, it might be just your email"
 echo ""
 
 read -p "Enter your OCI username: " OCI_USERNAME
@@ -130,13 +85,6 @@ if [ $? -eq 0 ]; then
 else
     echo ""
     echo "❌ Failed to login to OCI Registry"
-    echo ""
-    echo "Common issues:"
-    echo "1. Incorrect username format - should be: ${TENANCY_NAMESPACE}/<username>"
-    echo "2. Invalid Auth Token"
-    echo "3. Auth Token expired"
-    echo ""
-    echo "Please verify your credentials and try again"
     exit 1
 fi
 
@@ -145,27 +93,51 @@ echo -e "\n📦 Creating repositories in OCI Registry..."
 
 create_repo() {
     local repo_name=$1
+    echo ""
     echo "Creating repository: $repo_name"
     
-    # Try to create repository
-    oci artifacts container repository create \
+    # Check if repository already exists first
+    EXISTING_REPO=$(oci artifacts container repository list \
         --compartment-id "$COMPARTMENT_ID" \
         --display-name "$repo_name" \
-        --is-public false \
-        2>/dev/null
+        --query 'data.items[0].id' \
+        --raw-output 2>&1)
     
-    if [ $? -eq 0 ]; then
-        echo "  ✓ Repository '$repo_name' created"
+    if [ $? -eq 0 ] && [ -n "$EXISTING_REPO" ] && [ "$EXISTING_REPO" != "null" ]; then
+        echo "  ℹ Repository '$repo_name' already exists"
+        return 0
+    fi
+    
+    # Try to create repository - show errors this time
+    echo "  Creating new repository..."
+    CREATE_OUTPUT=$(oci artifacts container repository create \
+        --compartment-id "$COMPARTMENT_ID" \
+        --display-name "$repo_name" \
+        --is-public false 2>&1)
+    
+    CREATE_STATUS=$?
+    
+    if [ $CREATE_STATUS -eq 0 ]; then
+        echo "  ✓ Repository '$repo_name' created successfully"
     else
-        echo "  ℹ Repository '$repo_name' may already exist (this is OK)"
+        # Check if error is because it already exists
+        if echo "$CREATE_OUTPUT" | grep -q "already exists"; then
+            echo "  ℹ Repository '$repo_name' already exists (this is OK)"
+        else
+            echo "  ⚠ Warning: Could not create repository '$repo_name'"
+            echo "  Error details: $CREATE_OUTPUT"
+            echo "  You may need to create it manually in OCI Console"
+        fi
     fi
 }
 
+# Create all three repositories
 create_repo "$REPO_MONGODB"
 create_repo "$REPO_BACKEND"
 create_repo "$REPO_FRONTEND"
 
-echo "✓ Repositories created/verified"
+echo ""
+echo "✓ Repository setup completed"
 
 # Create Kubernetes secret for image pull
 echo -e "\n🔑 Creating Kubernetes image pull secret..."
@@ -211,7 +183,7 @@ echo ""
 echo "📝 Summary:"
 echo "  - Docker logged into OCI Registry"
 echo "  - Registry URL: ${REGION}.ocir.io/${TENANCY_NAMESPACE}"
-echo "  - Repositories created:"
+echo "  - Repositories created/verified:"
 echo "    • ${REGION}.ocir.io/${TENANCY_NAMESPACE}/${REPO_MONGODB}"
 echo "    • ${REGION}.ocir.io/${TENANCY_NAMESPACE}/${REPO_BACKEND}"
 echo "    • ${REGION}.ocir.io/${TENANCY_NAMESPACE}/${REPO_FRONTEND}"
