@@ -49,3 +49,4 @@ customer/
 
 # Kubernetes secrets (will recreate for K8s deployment)
 *secret*.yaml
+scripts/k8s/.registry-config

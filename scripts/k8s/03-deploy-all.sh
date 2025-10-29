@@ -29,23 +29,44 @@ echo "✓ Connected to Kubernetes cluster"
 # Update image references in deployment files
 echo -e "\n📝 Updating deployment files with registry information..."
 
-# Function to update image references
+# Function to update image references - handles both hardcoded and placeholders
 update_images() {
     local file=$1
-    sed -i.bak "s|<REGION>|${REGION}|g" "$file"
-    sed -i.bak "s|<NAMESPACE>|${TENANCY_NAMESPACE}|g" "$file"
-    rm -f "${file}.bak"
+    
+    # Create a temporary file
+    local tmpfile="${file}.tmp"
+    
+    # Fix any hardcoded namespaces first (from any region or namespace)
+    # This regex catches: any-region.ocir.io/any-namespace/service-name:tag
+    sed "s|image: [a-z0-9-]*\.ocir\.io/[a-zA-Z0-9]*/\(mongodb\|backend\|frontend\)-customer:latest|image: ${REGION}.ocir.io/${TENANCY_NAMESPACE}/\1-customer:latest|g" "$file" > "$tmpfile"
+    
+    # Then replace any remaining placeholders
+    sed -i "s|<REGION>|${REGION}|g" "$tmpfile"
+    sed -i "s|<NAMESPACE>|${TENANCY_NAMESPACE}|g" "$tmpfile"
+    
+    # Move temp file back to original
+    mv "$tmpfile" "$file"
+    
+    echo "  Updated: $file"
 }
 
 # Update all deployment files
 for file in k8s/mongodb/deployment.yaml k8s/backend/deployment.yaml k8s/frontend/deployment.yaml; do
     if [ -f "$file" ]; then
         update_images "$file"
-        echo "  Updated: $file"
+    else
+        echo "  ⚠ Warning: $file not found"
     fi
 done
 
 echo "✓ Deployment files updated"
+
+# Verify image references
+echo -e "\n🔍 Verifying image references..."
+echo "Expected: ${REGION}.ocir.io/${TENANCY_NAMESPACE}/[service]-customer:latest"
+echo ""
+grep "image:" k8s/*/deployment.yaml | grep -v "#"
+echo ""
 
 # Deploy resources
 echo -e "\n🚀 Deploying resources to Kubernetes..."
@@ -132,7 +153,7 @@ kubectl get services -n customer-app
 echo ""
 
 if [ -n "$EXTERNAL_IP" ]; then
-    echo "🎯 Access your application:"
+    echo "�� Access your application:"
     echo "  Frontend: http://${EXTERNAL_IP}"
     echo "  Backend API: http://${EXTERNAL_IP}/api/customers"
     echo "  Health Check: http://${EXTERNAL_IP}/api/health"

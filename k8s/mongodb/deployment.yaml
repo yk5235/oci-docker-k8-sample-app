@@ -20,7 +20,7 @@ spec:
     spec:
       containers:
       - name: mongodb
-        image: ap-singapore-1.ocir.io/axhhij4fyswp/mongodb-customer:latest
+        image: <REGION>.ocir.io/<NAMESPACE>/mongodb-customer:latest
         imagePullPolicy: Always
         ports:
         - containerPort: 27017

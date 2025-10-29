@@ -20,7 +20,7 @@ spec:
     spec:
       containers:
       - name: backend
-        image: ap-singapore-1.ocir.io/axhhij4fyswp/backend-customer:latest
+        image: <REGION>.ocir.io/<NAMESPACE>/backend-customer:latest
         imagePullPolicy: Always
         ports:
         - containerPort: 3000
