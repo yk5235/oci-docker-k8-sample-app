@@ -8,7 +8,7 @@ echo "========================================"
 # Configuration
 REGION="ap-singapore-1"
 TENANCY_NAMESPACE="idxkccw2srke"
-COMPARTMENT_ID="ocid1.compartment.oc1..aaaaaaaae42xeu7qhnn2yloyqv4focr2kuoyvqdom6ouhmshkghfzvpkswsq"
+COMPARTMENT_ID="ocid1.compartment.oc1..aaaaaaaa2jijt4objpfgdvha7e2lgj35jaheez76qenpbaah7yu3o2hnr5ja"
 
 # Repository names
 REPO_MONGODB="mongodb-customer"
@@ -100,21 +100,21 @@ create_repo_with_timeout() {
     local exit_code=${PIPESTATUS[0]}
     
     if [ $exit_code -eq 0 ]; then
-        echo "  ✓ Repository '$repo_name' created successfully"
+        echo "   ✓ Repository '$repo_name' created successfully"
         return 0
     elif [ $exit_code -eq 124 ]; then
-        echo "  ⚠ Timeout: OCI CLI took too long. Repository might have been created."
-        echo "  Checking if repository exists..."
+        echo "   ⚠ Timeout: OCI CLI took too long. Repository might have been created."
+        echo "   Checking if repository exists..."
         sleep 2
         check_repo_exists "$repo_name"
         return $?
     else
         # Check if error is because it already exists
-        if grep -q "already exists\|AlreadyExists" /tmp/oci_output.log 2>/dev/null; then
-            echo "  ℹ Repository '$repo_name' already exists (this is OK)"
+        if grep -q "already exists\|AlreadyExists\|NAMESPACE_CONFLICT" /tmp/oci_output.log 2>/dev/null; then
+            echo "   ℹ Repository '$repo_name' already exists (this is OK)"
             return 0
         else
-            echo "  ⚠ Warning: Error creating repository '$repo_name'"
+            echo "   ⚠ Warning: Error creating repository '$repo_name'"
             cat /tmp/oci_output.log
             return 1
         fi
@@ -132,10 +132,10 @@ check_repo_exists() {
         --raw-output 2>/dev/null)
     
     if [ $? -eq 0 ] && [ -n "$EXISTING_REPO" ] && [ "$EXISTING_REPO" != "null" ]; then
-        echo "  ✓ Repository '$repo_name' exists"
+        echo "   ✓ Repository '$repo_name' exists"
         return 0
     else
-        echo "  ✗ Repository '$repo_name' does not exist"
+        echo "   ✗ Repository '$repo_name' does not exist"
         return 1
     fi
 }
@@ -150,6 +150,10 @@ create_repo_with_timeout "$REPO_FRONTEND"
 
 echo ""
 echo "✓ Repository setup completed"
+
+# Wait for a few seconds to allow for API eventual consistency
+echo -e "\n⏳ Waiting for repositories to become visible in the API..."
+sleep 15
 
 # Verify all repositories exist
 echo -e "\n🔍 Verifying all repositories..."
@@ -199,14 +203,14 @@ echo "✅ Registry Setup Complete!"
 echo "========================================"
 echo ""
 echo "📝 Summary:"
-echo "  - Docker logged into OCI Registry"
-echo "  - Registry URL: ${REGION}.ocir.io/${TENANCY_NAMESPACE}"
-echo "  - Repositories created/verified:"
-echo "    • ${REGION}.ocir.io/${TENANCY_NAMESPACE}/${REPO_MONGODB}"
-echo "    • ${REGION}.ocir.io/${TENANCY_NAMESPACE}/${REPO_BACKEND}"
-echo "    • ${REGION}.ocir.io/${TENANCY_NAMESPACE}/${REPO_FRONTEND}"
-echo "  - Kubernetes secret 'oci-registry-secret' created in 'customer-app' namespace"
-echo "  - Configuration saved to: $CONFIG_FILE"
+echo "   - Docker logged into OCI Registry"
+echo "   - Registry URL: ${REGION}.ocir.io/${TENANCY_NAMESPACE}"
+echo "   - Repositories created/verified:"
+echo "     • ${REGION}.ocir.io/${TENANCY_NAMESPACE}/${REPO_MONGODB}"
+echo "     • ${REGION}.ocir.io/${TENANCY_NAMESPACE}/${REPO_BACKEND}"
+echo "     • ${REGION}.ocir.io/${TENANCY_NAMESPACE}/${REPO_FRONTEND}"
+echo "   - Kubernetes secret 'oci-registry-secret' created in 'customer-app' namespace"
+echo "   - Configuration saved to: $CONFIG_FILE"
 echo ""
 echo "🚀 Next step: Run ./02-build-and-push.sh"
 echo "========================================"
